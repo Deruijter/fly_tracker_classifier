@@ -19,12 +19,16 @@ library(zoo)
 require(gridExtra)
 library(animation)
 library(egg)
+library(stringr)
 
+script_dir <- dirname(rstudioapi::getSourceEditorContext()$path)
+setwd(script_dir)
 
 # Consider any velocity under this value as zero (based on histogram visualization).
 # Reason for this is that the camera will always record some kind of speed due to vibrations/conversion of the videos and stuff like that
 non_zero = 0.4 # Unit: pixels per time frame
 
+# Indexes of the different body parts of the flies
 id_head = 1
 id_thorax = 2
 id_abdomen = 3
@@ -38,22 +42,22 @@ id_wing_l = 10
 id_wing_r = 11
 id_eye_l = 12
 id_eye_r = 13
+# Indexes of the coordinates
 id_x = 1
 id_y = 2
 
-path_data = '/home/leven/work/uppsala_helgi/proj_fly/data/behavior'
-path_tracks = '/home/leven/work/uppsala_helgi/proj_fly/data/track_exports'
-path_tracks_csv = '/home/leven/work/uppsala_helgi/proj_fly/data/track_exports_csv'
-path_speed_csv = '/home/leven/work/uppsala_helgi/proj_fly/data/track_speed_csv'
-path_output = '/home/leven/work/uppsala_helgi/proj_fly/output'
-exp_details = read.csv('/home/leven/work/uppsala_helgi/proj_fly/data/tests/data.txt', header=T, sep='\t')
+path_sleap = './data/sleap_exports'
+path_sleap_csv = './data/sleap_exports_csv'
+path_output = './output'
 
+# Details of each experiment
+exp_details = read.csv('../data/tests/data.csv', header=T, sep='\t')
 
-################### CREATE THE DATA SET ########################################
-nr_clusters=3-1 #-1 because the numbering starts at 0
-nr_comb_cl = 3 - 1
-files = list.files(path_data, '*.csv')
-dt = data.frame('fid'=character(),
+source("basic_functions.r")
+source("create_video.r")
+
+# Initialize a data set for all the data related to specific videos
+dt_videos = data.frame('fid'=character(),
                 'date'=character(), 
                 'rec_nr'=numeric(), 
                 'l_r'=character(), 
@@ -67,43 +71,26 @@ dt = data.frame('fid'=character(),
                 'duration_grooming'=numeric(),
                 'duration_moving'=numeric(),
                 'distance_total'=numeric()
-                )
-for (i in c(0:nr_clusters)){
-  # dt = cbind(dt, data.frame('tmp'=numeric()))
-  # colnames(dt)[length(colnames(dt))] = sprintf('freq_%s',i)
-  # dt = cbind(dt, data.frame('tmp'=numeric()))
-  # colnames(dt)[length(colnames(dt))] = sprintf('mdur_%s',i)
-  dt = cbind(dt, data.frame('tmp'=numeric()))
-  colnames(dt)[length(colnames(dt))] = sprintf('frms_%s',i)
-}
+)
 
-# Loop through the b-soid cluster files and append the data to our data frame
+
+
+################### CREATE THE DATA SET ########################################
+files = list.files(path_sleap_csv, '*.csv')
+
+# Loop through the SLEAP files and append the data to our data frame
 for (file in files){
-  tmp = read.csv(sprintf('%s/%s', path_data, file), header=T, sep =",", )
-  # Group similar clusters together
-  # 0 = Rest
-  # 1 = Groom
-  # 2 = Move
-  tmp[tmp$B.SOiD.labels %in% c(0,1,2,3,4,5,6,7,
-                               9,10,11,12,13,
-                               15,16,17,
-                               19,20,21,22,23,24,25,
-                               27,
-                               33,
-                               35,
-                               38,
-                               41,42,
-                               51), 'B.SOiD.labels'] = 0
-  tmp[tmp$B.SOiD.labels %in% c(8,14,18,28,30,31,32,34,39,40,43,44,45), 'B.SOiD.labels'] = 1
-  tmp[tmp$B.SOiD.labels %in% c(26,29,36,37,46,47,48,49,50), 'B.SOiD.labels'] = 2
+  file = "video_l_2022-10-11_1_1.csv"
+  file_no_ext = strsplit(files, '[.]')[[1]][1]
+  file_no_ext_split = strsplit(file_no_ext, '_')[[1]]
+  date = file_no_ext_split[3]
+  session = file_no_ext_split[4] # Morning or afternoon
+  l_r = file_no_ext_split[2]
+  rec_nr = file_no_ext_split[5]
   
-  
-  date = substring(file, 31, 40)
-  session = substring(file, 42, 42)
-  l_r = substring(file, 29, 29)
-  rec_nr = substring(file, 44,44)
   print(sprintf('%s_%s_%s', date, session, l_r))
   
+  # Generate a "fly ID"
   fid = sprintf('%s_%s_%s', date, session, l_r)
   
   exp_detail = exp_details[exp_details$date==date & exp_details$couple_id==session & exp_details$testnr==rec_nr,]
@@ -112,26 +99,24 @@ for (file in files){
   exp_time = 'morning'
   if(as.numeric(substring(exp_detail$time_rec,1,2)) >= 12) exp_time = 'afternoon'
   
+  # Ok now we need to append the behavioral data
+  # % still, grooming, moving
+  # SD velocity, mean velocity, total distance
+  # Preferably we create a new file that has each frame + the behavior data: behavior type (S, G, M) and speed (from that we can compute the total distance, mean and SD velocity)
+  
   h5details = GetH5Details(date, session, rec_nr, l_r)
   
   a = data.frame(fid,date,as.numeric(rec_nr),l_r,sex_m,exp_type,exp_time, 0, 
                  h5details$velocity_non_zero_mean, h5details$velocity_non_zero_sd,
                  h5details$duration_still, h5details$duration_grooming, h5details$duration_moving,
                  h5details$distance_total)
-  for (bgroup in c(0:nr_comb_cl)){
-    freq = length(tmp$B.SOiD.labels[tmp$B.SOiD.labels==bgroup])
-    mdur = 0
-    frms = 0
-    if (freq > 0) mdur = mean(tmp$Run.lengths[tmp$B.SOiD.labels==bgroup])
-    if (freq > 0) frms = sum(tmp$Run.lengths[tmp$B.SOiD.labels==bgroup])
-    a = cbind(a, data.frame(frms)) # ignore the mean duration and freq for now, (freq, mdur, frms)
-  }
-  dt[nrow(dt)+1,] = a 
+  
+  dt_videos[nrow(dt_videos)+1,] = a 
 }
 
+# Correct the recording numbers (some flies entered the arena at the 2nd recording)
 fids = unique(dt$fid)
 dt$rec_nr_cor = 0
-# Correct the recording numbers (some flies entered the arena at the 2nd recording)
 for(fid in fids){
   min_rec_nr = min(dt[dt$fid==fid,'rec_nr'])
   dt[dt$fid==fid,'rec_nr_cor'] = dt[dt$fid==fid,'rec_nr'] - (min_rec_nr-1)
@@ -563,462 +548,13 @@ ggbiplot(pc, groups=dt$fid, choices = c(3,4), obs.scale = 1, var.scale = 1, elli
 
 
 
-################### TEST MEUK ##################################################
-dt_molten[dt_molten$variable==0,]
-fd = 'l_2022-11-16_2_4'
-
-tmp = read.csv(sprintf('%s/Mar-16-2023bout_lengths_90Hz%s.csv', path_data, fd), header=T, sep =",", )
-tmp = tmp[tmp$Run.lengths>10,]
-tmp = tmp %>% 
-  group_by(grp = rleid(B.SOiD.labels), B.SOiD.labels) %>% 
-  summarise(len = sum(Run.lengths), .groups = 'drop', start=first(Start.time..frames.)) %>%
-  as.data.frame()
-tmp$start = sprintf('%s:%02.0f', floor((tmp$start/90)/60), mod(round(tmp$start/90), 60))
-
-tmp2 = tmp %>% group_by(B.SOiD.labels) %>% summarize(sm=sum(Run.lengths), cn=n()) %>% as.data.frame()
-tmp2
-tmp[tmp$B.SOiD.labels==22,]
 
 
 
-################### PLOT WALKED PATH ###########################################
-
-h5file = sprintf('%s/%s.h5', path_tracks, 'l_2022-10-12_1_1')
-tracks = h5read(h5file,'tracks')
-tracks_x = tracks[,1,1,1] # time frame, body part,x/y, Fly id
-tracks_y = tracks[,1,2,1]
-plot(tracks_x, tracks_y, col='#ff000066',pch=16,cex=0.5,asp=1)
-thorax_x = tracks[,2,1,1] # time frame, body part,x/y, Fly id
-thorax_y = tracks[,2,2,1]
-thorax_xy = tracks[,2,,1]
-points(thorax_x, thorax_y, col='#00000066',pch=16,cex=0.5)
-tracks_x = tracks[,3,1,1] # time frame, body part,x/y, Fly id
-tracks_y = tracks[,3,2,1]
-points(tracks_x, tracks_y, col='#00aa0066',pch=16,cex=0.5)
 
 
 
-######################### CONVERT H5 TO CSV FOR VAME ###########################
 
-files = list.files(path_data, '*.csv')
-for(file in files){
-  date = substring(file, 31, 40)
-  session = substring(file, 42, 42)
-  l_r = substring(file, 29, 29)
-  rec_nr = substring(file, 44,44)
-  file_id = sprintf('%s_%s_%s_%s', l_r, date, session, rec_nr)
-  h5file = sprintf('%s/%s.h5', path_tracks, file_id)
-  tracks = h5read(h5file,'tracks')
-  tracks_csv = data.frame(0:(length(tracks[,1,1,1])-1), 
-                          tracks[,1,1,1], tracks[,1,2,1], rep(1,length(tracks[,1,1,1])),
-                          tracks[,2,1,1], tracks[,2,2,1], rep(1,length(tracks[,1,1,1])),
-                          tracks[,3,1,1], tracks[,3,2,1], rep(1,length(tracks[,1,1,1])),
-                          tracks[,4,1,1], tracks[,4,2,1], rep(1,length(tracks[,1,1,1])),
-                          tracks[,5,1,1], tracks[,5,2,1], rep(1,length(tracks[,1,1,1])),
-                          tracks[,6,1,1], tracks[,6,2,1], rep(1,length(tracks[,1,1,1])),
-                          tracks[,7,1,1], tracks[,7,2,1], rep(1,length(tracks[,1,1,1])),
-                          tracks[,8,1,1], tracks[,8,2,1], rep(1,length(tracks[,1,1,1])),
-                          tracks[,9,1,1], tracks[,9,2,1], rep(1,length(tracks[,1,1,1])),
-                          tracks[,10,1,1], tracks[,10,2,1], rep(1,length(tracks[,1,1,1])),
-                          tracks[,11,1,1], tracks[,11,2,1], rep(1,length(tracks[,1,1,1])), 
-                          tracks[,12,1,1], tracks[,12,2,1], rep(1,length(tracks[,1,1,1])), 
-                          tracks[,13,1,1], tracks[,13,2,1], rep(1,length(tracks[,1,1,1])), 
-                          c(tracks[1,2,1,1], tracks[1:(length(tracks[,1,1,1])-1),2,1,1]), c(tracks[1,2,2,1], tracks[1:(length(tracks[,1,1,1])-1),2,2,1]), rep(1,length(tracks[,1,1,1])) )
-  colnames(tracks_csv) = c('coords',
-                           'x','y','likelihood',
-                           'x','y','likelihood',
-                           'x','y','likelihood',
-                           'x','y','likelihood',
-                           'x','y','likelihood',
-                           'x','y','likelihood',
-                           'x','y','likelihood',
-                           'x','y','likelihood',
-                           'x','y','likelihood',
-                           'x','y','likelihood',
-                           'x','y','likelihood',
-                           'x','y','likelihood',
-                           'x','y','likelihood',
-                           'x','y','likelihood')
-  # interpolate missing head or thorax data because we need those for egocentric alignment in VAME
-  # NOTE: VAME ALREADY DOES INTERPOLATION
-  # if(any(is.na(tracks_csv[,c(2,3,5,6)]))){
-  #   tracks_csv = na.approx(tracks_csv) #Note: this doesn't catch NAs if they are in the first or last row
-  #   if(any(is.na(tracks_csv[,c(2,3,5,6)]))) print(sprintf('NAs in %s', file))
-  # }
-  # If limbs are missing for the entire duration of the video, set them to the thorax location (otherwise VAME can't process them)
-  for(i in c(seq(8,43,3))){
-    if(all(is.na(tracks_csv[,i]))){
-      tracks_csv[,i] = tracks_csv[,5]
-      tracks_csv[,i+1] = tracks_csv[,6]
-    }
-  }
-  write.csv(tracks_csv, file=sprintf('%s/video_%s.csv', path_tracks_csv, file_id), sep=',',row.names=F,quote=F)
-}
-
-file_id = 'l_2022-10-12_1_1'
-date = '2022-10-12'
-session = 1
-rec_nr = 1
-l_r = 'l'
-h5file = sprintf('%s/%s.h5', path_tracks, file_id)
-tracks = h5read(h5file,'tracks')
-tracks_csv = data.frame(0:(length(tracks[,1,1,1])-1), 
-              tracks[,1,1,1], tracks[,1,2,1], rep(1,length(tracks[,1,1,1])),
-              tracks[,2,1,1], tracks[,2,2,1], rep(1,length(tracks[,1,1,1])),
-              tracks[,3,1,1], tracks[,3,2,1], rep(1,length(tracks[,1,1,1])),
-              tracks[,4,1,1], tracks[,4,2,1], rep(1,length(tracks[,1,1,1])),
-              tracks[,5,1,1], tracks[,5,2,1], rep(1,length(tracks[,1,1,1])),
-              tracks[,6,1,1], tracks[,6,2,1], rep(1,length(tracks[,1,1,1])),
-              tracks[,7,1,1], tracks[,7,2,1], rep(1,length(tracks[,1,1,1])),
-              tracks[,8,1,1], tracks[,8,2,1], rep(1,length(tracks[,1,1,1])),
-              tracks[,9,1,1], tracks[,9,2,1], rep(1,length(tracks[,1,1,1])),
-              tracks[,10,1,1], tracks[,10,2,1], rep(1,length(tracks[,1,1,1])),
-              tracks[,11,1,1], tracks[,11,2,1], rep(1,length(tracks[,1,1,1])), 
-              tracks[,12,1,1], tracks[,12,2,1], rep(1,length(tracks[,1,1,1])), 
-              tracks[,13,1,1], tracks[,13,2,1], rep(1,length(tracks[,1,1,1])), 
-              c(tracks[1,2,1,1], tracks[1:(length(tracks[,1,1,1])-1),2,1,1]), c(tracks[1,2,2,1], tracks[1:(length(tracks[,1,1,1])-1),2,2,1]), rep(1,length(tracks[,1,1,1])) )
-colnames(tracks_csv) = c('coords',
-                         'x','y','likelihood',
-                         'x','y','likelihood',
-                         'x','y','likelihood',
-                         'x','y','likelihood',
-                         'x','y','likelihood',
-                         'x','y','likelihood',
-                         'x','y','likelihood',
-                         'x','y','likelihood',
-                         'x','y','likelihood',
-                         'x','y','likelihood',
-                         'x','y','likelihood',
-                         'x','y','likelihood',
-                         'x','y','likelihood',
-                         'x','y','likelihood')
-write.csv(tracks_csv, file=sprintf('%s/video_%s.csv', path_tracks_csv, file_id), sep=',',row.names=F,quote=F)
-# h5details = GetH5Details(date, session, rec_nr, l_r)
-# speeds = data.frame(0:(length(tracks[,1,1,1])-1), h5details$speeds) #pixels per timeframe
-# colnames(speeds) = c('frame','speed')
-# write.csv(speeds, file=sprintf('%s/video_%s.csv', path_speed_csv, file_id), sep=',',row.names=F,quote=F)
-
-
-################################################################################
-######################### FUNCTIONS ############################################
-################################################################################
-
-GetH5Details = function(date, session, rec_nr, l_r){
-  # body parts:
-  # 1: head
-  # 2: thorax
-  # 3: abdomen
-  # 4-9: legs
-  # 10 & 11: wings
-  # 12 & 13: eyes
-  tracks = GetTracks(date, session, rec_nr, l_r)
-  dist_thorax = GetH5Distances(tracks, 2)
-  
-  # Get the speed of the fastest leg (should we look at wing speed too?)
-  dist_limbs_max = numeric(length(dist_thorax))
-  for (i_l in c(4,5,6,7,8,9)){
-    dist_limbs = GetH5Distances(tracks, i_l)
-    dist_limbs_max = pmax(dist_limbs_max, dist_limbs)
-  }
-  
-  dist_thorax_non_zero = dist_thorax[dist_thorax>=non_zero]
-  dist_thorax_zero = dist_thorax[dist_thorax<non_zero]
-  
-  nr_frames_still = sum(dist_thorax<non_zero & dist_limbs_max < non_zero)
-  nr_frames_grooming = sum(dist_thorax<non_zero & dist_limbs_max >= non_zero)
-  nr_frames_moving = sum(dist_thorax>=non_zero & dist_limbs_max >= non_zero)
-  nr_frames_other = sum(dist_thorax>=non_zero & dist_limbs_max < non_zero) # thorax is moving but the limbs aren't? not sure what to make of this
-  
-  #plot(1:length(dist),dist,type='l',ylim=c(0,30))
-  #hist(dist, breaks=300, xlim=c(0,15))
-  
-  # Unit are pixels per time frame
-  vl_mean = if_else(length(dist_thorax_non_zero)==0, 0, mean(dist_thorax_non_zero))
-  vl_sd = if_else(length(dist_thorax_non_zero)==0, 0, sd(dist_thorax_non_zero))
-  dt = data.frame('velocity_non_zero_mean'=vl_mean,
-                  'velocity_non_zero_sd'=vl_sd,
-                  'duration_still'=nr_frames_still,
-                  'duration_grooming'=nr_frames_grooming,
-                  'duration_moving'=nr_frames_moving,
-                  'distance_total'=sum(dist_thorax_non_zero))
-  return(dt)
-}
-
-GetH5Distances = function(tracks, body_part){
-  # Perform additional smoothing step on the thorax
-  # The exact pixel may have been slighly different between different video frames causing a "shake"
-  if(body_part == id_thorax){
-    window_size=5
-    total_time_frames = length(tracks[,1,1,])
-    tracks[3:(total_time_frames-2),id_thorax,id_x,] = zoo::rollmean(tracks[,id_thorax,id_x,], k=window_size, align='center', fill=list(NULL, NA, NULL))
-    tracks[3:(total_time_frames-2),id_thorax,id_y,] = zoo::rollmean(tracks[,id_thorax,id_y,], k=window_size, align='center', fill=list(NULL, NA, NULL))
-  }
-  
-  # print(body_part)
-  xy_coords = tracks[,body_part,,1]
-  
-  xy_coords = as.data.frame(xy_coords)
-  
-  # INTERPOLATE NAs
-  if(all(is.na(xy_coords))) # IF WE NEVER FOUND THIS BODY PART SET ALL TO 0
-    xy_coords = data.frame(matrix(0, nrow = nrow(xy_coords), ncol = ncol(xy_coords)))
-  xy_coords = as.data.frame(na.approx(xy_coords))
-  colnames(xy_coords) = c('x','y')
-  
-  # SMOOTH THE COORDINATES AS THE CAMERA + TRACKING SOFTWARE INTRODUCES JITTER 
-  window_size=5 
-  xy_coords$x <- zoo::rollmean(xy_coords$x, k = window_size, align='center', fill = NA)
-  xy_coords$y <- zoo::rollmean(xy_coords$y, k = window_size, align='center', fill = NA)
-  
-  # Compute the distances between each time frame
-  xy_coords = xy_coords[complete.cases(xy_coords),]
-  dist <- sqrt(diff(xy_coords$x)^2 + diff(xy_coords$y)^2)
-  
-  return(dist)
-}
-
-GetH5DistancesPlusMotion = function(date, session, rec_nr, l_r){
-  tracks = GetTracks(date, session, rec_nr, l_r)
-  tracks = GetTracksSmoothed(tracks)
-  dist_thorax = GetH5Distances(tracks, 2)
-  
-  # Get the speed of the fastest leg/wing
-  dist_limbs_max = numeric(length(dist_thorax))
-  for (i_l in c(4,5,6,7,8,9,10,11)){
-    dist_limbs = GetH5Distances(tracks, i_l)
-    dist_limbs_max = pmax(dist_limbs_max, dist_limbs)
-  }
-  
-  dt = data.frame('dist_thorax'=dist_thorax,'dist_limbs_max'=dist_limbs_max,'motion_type'=rep_len('unknown',length(dist_thorax)))
-  
-  dt[dist_thorax<non_zero & dist_limbs_max < non_zero,'motion_type'] = 'still'
-  dt[dist_thorax<non_zero & dist_limbs_max >= non_zero,'motion_type'] = 'grooming'
-  dt[dist_thorax>=non_zero & dist_limbs_max >= non_zero,'motion_type'] = 'moving'
-  
-  return(dt)
-}
-
-GetH5DistancesPlusMotion(date,session,rec_nr, l_r)
-
-GetTracks = function(date,session,rec_nr, l_r){
-  h5file = sprintf('%s/%s_%s_%s_%s.h5', path_tracks, l_r, date, session, rec_nr)
-  tracks = h5read(h5file,'tracks') #  time frame, body part, [x coords, y coords], Fly id
-  return(tracks)
-}
-
-GetTracksStabilized = function(date,session,rec_nr,l_r){
-  tracks = GetTracks(date,session,rec_nr, l_r)
-  tracks[,,id_x,] = tracks[,,id_x,] - tracks[,id_thorax,id_x,]
-  tracks[,,id_y,] = tracks[,,id_y,] - tracks[,id_thorax,id_y,]
-  # Calculate the angle of rotation in radians
-  angle <- atan2(tracks[,id_head,id_x,],tracks[,id_head,id_y,])
-  
-  for(i in c(1,3,4,5,6,7,8,9,10,11,12,13)){
-    tracks[,i,,] = rotate(tracks[,i,,], angle)
-  }
-  
-  return(tracks)
-}
-
-GetTracksSmoothed = function(tracks){
-  # Perform additional smoothing step on the thorax
-  # The exact pixel may have been slighly different between different video frames causing a "shake"
-  for(i in c(1:13)){
-    window_size=5
-    total_time_frames = length(tracks[,1,1,])
-    tracks[3:(total_time_frames-2),i,id_x,] = zoo::rollmean(tracks[,i,id_x,], k=window_size, align='center', fill=list(NULL, NA, NULL))
-    tracks[3:(total_time_frames-2),i,id_y,] = zoo::rollmean(tracks[,i,id_y,], k=window_size, align='center', fill=list(NULL, NA, NULL))
-  }
-  
-  return(tracks)
-}
-
-PlotFly = function(tracks, t, scale){
-  tracks1x = tracks[t,,1,] # time frame, body part,x/y, Fly id
-  tracks1y = tracks[t,,2,]
-  
-  lines_data = data.frame(from_x=c(tracks1x[2], tracks1x[2], tracks1x[2], tracks1x[2], tracks1x[2], tracks1x[2], tracks1x[2], tracks1x[2], tracks1x[2], tracks1x[2]), 
-                          from_y=c(tracks1y[2], tracks1y[2], tracks1y[2], tracks1y[2], tracks1y[2], tracks1y[2], tracks1y[2], tracks1y[2], tracks1y[2], tracks1y[2]), 
-                          to_x= c(tracks1x[1], tracks1x[3], tracks1x[4], tracks1x[5], tracks1x[6], tracks1x[7], tracks1x[8], tracks1x[9], tracks1x[10], tracks1x[11]), 
-                          to_y= c(tracks1y[1], tracks1y[3], tracks1y[4], tracks1y[5], tracks1y[6], tracks1y[7], tracks1y[8], tracks1y[9], tracks1y[10], tracks1y[11]),
-                          width=(c(4, 4, 1, 1, 1, 1, 1, 1, 4, 4)/2) * scale,
-                          clr=c('black','black','black','black','black','black','black','black','grey','grey'), stringsAsFactors = F)
-  p <- ggplot(lines_data, aes(x = from_x, y = from_y, xend = to_x, yend = to_y, linewidth=width, color=clr)) +
-    geom_segment() + 
-    # xlim(c(1,1000)) +
-    # ylim(c(1,1000)) +
-    scale_color_identity() +
-    scale_linewidth_identity() +
-    coord_fixed() + 
-    theme(axis.title.x=element_blank(),
-          axis.title.y=element_blank())
-  return(p)
-}
-PlotFly_old = function(date,session,rec_nr, l_r, time_frame){
-  tracks = GetTracks(date,session,rec_nr, l_r)
-  tracks1x = tracks[time_frame,,1,] # time frame, body part,x/y, Fly id
-  tracks1y = tracks[time_frame,,2,]
-  lines(c(tracks1x[2], tracks1x[1]), c(tracks1y[2], tracks1y[1]), lwd=5) # thorax => head
-  lines(c(tracks1x[2], tracks1x[3]), c(tracks1y[2], tracks1y[3]), lwd=5) # thorax => abdomen
-  lines(c(tracks1x[2], tracks1x[4]), c(tracks1y[2], tracks1y[4])) # thorax => legs
-  lines(c(tracks1x[2], tracks1x[5]), c(tracks1y[2], tracks1y[5]))
-  lines(c(tracks1x[2], tracks1x[6]), c(tracks1y[2], tracks1y[6]))
-  lines(c(tracks1x[2], tracks1x[7]), c(tracks1y[2], tracks1y[7]))
-  lines(c(tracks1x[2], tracks1x[8]), c(tracks1y[2], tracks1y[8]))
-  lines(c(tracks1x[2], tracks1x[9]), c(tracks1y[2], tracks1y[9]))
-  lines(c(tracks1x[2], tracks1x[10]), c(tracks1y[2], tracks1y[10]), lwd=5, col='gray') # thorax => wings
-  lines(c(tracks1x[2], tracks1x[11]), c(tracks1y[2], tracks1y[11]), lwd=5, col='gray')
-  points(tracks1x[2], tracks1y[2], pch=16, col='red', cex=0.5) # thorax
-  points(tracks1x[1], tracks1y[1], pch=16, col='#00DD00', cex=0.5) # head
-  points(tracks1x[3], tracks1y[3], pch=16, col='#00AAFF', cex=0.5) # abdomen
-  
-}
-
-PlotFlyStabilized_old = function(date,session,rec_nr, l_r, time_frame){
-  tracks = GetTracksStabilized(date,session,rec_nr, l_r)
-  tracks1x = tracks[time_frame,,1,] # time frame, body part,x/y, Fly id
-  tracks1y = tracks[time_frame,,2,]
-  lines(c(tracks1x[2], tracks1x[1]), c(tracks1y[2], tracks1y[1]), lwd=5) # thorax => head
-  lines(c(tracks1x[2], tracks1x[3]), c(tracks1y[2], tracks1y[3]), lwd=5) # thorax => abdomen
-  lines(c(tracks1x[2], tracks1x[4]), c(tracks1y[2], tracks1y[4])) # thorax => legs
-  lines(c(tracks1x[2], tracks1x[5]), c(tracks1y[2], tracks1y[5]))
-  lines(c(tracks1x[2], tracks1x[6]), c(tracks1y[2], tracks1y[6]))
-  lines(c(tracks1x[2], tracks1x[7]), c(tracks1y[2], tracks1y[7]))
-  lines(c(tracks1x[2], tracks1x[8]), c(tracks1y[2], tracks1y[8]))
-  lines(c(tracks1x[2], tracks1x[9]), c(tracks1y[2], tracks1y[9]))
-  lines(c(tracks1x[2], tracks1x[10]), c(tracks1y[2], tracks1y[10]), lwd=5, col='gray') # thorax => wings
-  lines(c(tracks1x[2], tracks1x[11]), c(tracks1y[2], tracks1y[11]), lwd=5, col='gray')
-  points(tracks1x[2], tracks1y[2], pch=16, col='red', cex=0.5) # thorax
-  points(tracks1x[1], tracks1y[1], pch=16, col='#00DD00', cex=0.5) # head
-  points(tracks1x[3], tracks1y[3], pch=16, col='#00AAFF', cex=0.5) # abdomen
-}
-
-# Define a function to perform the rotation
-rotate = function(coords, angle) {
-  a = coords
-  a[,1] = coords[,1] * cos(angle) - coords[,2] * sin(angle)
-  a[,2] = coords[,1] * sin(angle) + coords[,2] * cos(angle)
-  return(a)
-}
-
-# Compute the relative root mean square error
-# basically root mean square error as a percentage of the mean value in the 
-# entire data set
-rmse = function(a){
-  rmse_a = sqrt(sum((a - mean(a))^2)/(length(a)-1))
-  #rmse_a = sqrt(sum((a-mean(a))^2)/length(a)) # same as above but this is how mathematicians write it
-  return(rmse_a)
-}
-rrmse = function(a, data_mean){
-  rrmse_a = rmse(a) * (1/data_mean) * 100
-  return(rrmse_a)
-}
-
-# Create a function to calculate the mode within a window
-mode_within_window <- function(x) {
-  unique_vals <- unique(x)
-  count_vals <- sapply(unique_vals, function(val) sum(x == val))
-  unique_vals[which.max(count_vals)]
-}
-
-
-######################### CREATE A VIDEO #######################################
-date = '2022-10-11'
-session=1
-rec_nr = 5
-l_r = 'l'
-t=500
-
-tracks = GetTracks(date, session, rec_nr, l_r)
-tracks_stabilized = GetTracksStabilized(date, session, rec_nr, l_r)
-tracks_stabilized_smoothed = GetTracksSmoothed(tracks_stabilized)
-dist_motion = GetH5DistancesPlusMotion(date, session, rec_nr, l_r)
-max_time_frames = nrow(dist_motion)
-dist_motion$time_frame = as.numeric(row.names(dist_motion))
-dist_motion$motion_type2 = dist_motion$motion_type#, levels=c('still','grooming','moving')
-window_size=13
-dist_motion$motion_type2[7:(max_time_frames-6)] = rollapply(dist_motion$motion_type2, width = window_size, FUN = mode_within_window, align = "center", fill=list(NULL, NA, NULL))
-dist_motion$motion_type_fact2 = factor(dist_motion$motion_type2, levels=c('still','grooming','moving'))
-
-video_name = sprintf('%s/%s_%s_%s_%s_combined2.mp4', path_output, l_r, date, session, rec_nr)
-theme_set(theme_classic(base_size=20))
-saveVideo(
-    for (t in c(1:8000)){
-      p1 = PlotFly(tracks, t, 1)
-      if(l_r == 'l')
-        p1 = p1 + lims(x=c(1,1000), y=c(1,1000))
-      if(l_r == 'r')
-        p1 = p1 + lims(x=c(1001,2000), y=c(1001,2000))
-
-      p2 = PlotFly(tracks_stabilized_smoothed, t, 3)
-      p2 = p2 + lims(x=c(-80,80), y=c(-80,80))
-      
-      
-      p3 = ggplot(data = dist_motion[max(1, min(t-250, max_time_frames-500)):max(min(t+250, max_time_frames),500),], aes(x=time_frame, y=motion_type_fact2, group=1)) +
-        geom_line() +
-        scale_fill_discrete(drop=FALSE) +
-        scale_y_discrete(drop=FALSE) +
-        geom_vline(xintercept = t, col='red') +
-        xlab("Time Frame") + 
-        theme(axis.title.x=element_blank(),
-              axis.text.x = element_blank(),
-              axis.title.y=element_blank())
-      
-      p4 = ggplot(data = dist_motion[max(1, min(t-250, max_time_frames-500)):max(min(t+250, max_time_frames),500),], aes(x=time_frame, y=dist_thorax)) +
-        geom_line() +
-        geom_vline(xintercept = t, col='red') +
-        ylim(c(0,max(dist_motion$dist_thorax))) +
-        xlab("Time Frame") + 
-        ylab("Velocity (pxl/frame)") +
-        theme()
-      
-      stats1 = data.frame('name'=c('Moving', 'Grooming', 'Still'),
-                          'vals'=c(nrow(dist_motion[dist_motion$time_frame<=t & dist_motion$motion_type=='moving',]),
-                         nrow(dist_motion[dist_motion$time_frame<=t & dist_motion$motion_type=='grooming',]),
-                         nrow(dist_motion[dist_motion$time_frame<=t & dist_motion$motion_type=='still',])), stringsAsFactors = T)
-      stats1$name = with(stats1, factor(name, levels = c('Still','Grooming','Moving')))
-      p6 = ggplot(stats1, aes(x=name, y=vals, fill=name))+
-        geom_bar(stat='identity', show.legend = F) + 
-        coord_flip() +
-        ylab('Nr. Frames') +
-        theme(axis.title.y=element_blank())
-      
-      if(length(dist_motion[dist_motion$time_frame<=t & dist_motion$motion_type=='moving','dist_thorax']) == 0){
-        mean_speed = 0
-        sd_speed = 0
-      } else {
-        mean_speed = mean(dist_motion[dist_motion$time_frame<=t & dist_motion$motion_type=='moving','dist_thorax'])
-        sd_speed = sd(dist_motion[dist_motion$time_frame<=t & dist_motion$motion_type=='moving','dist_thorax'])
-      }
-      stats2 = data.frame('name'=c('Mean move speed','SD move speed'),
-                          'vals'=c(mean_speed, sd_speed))
-      p7 = ggplot(stats2, aes(x=name, y=vals, fill=name))+
-        geom_bar(stat='identity', show.legend = F) + 
-        coord_flip() +
-        ylim(c(0,10)) +
-        ylab('Velocity (pxl/frame)') +
-        theme(axis.title.y=element_blank())
-      
-      ggarrange(p1, p2, p3, p6, p4, p7, ncol=2, heights = c(1, 0.3,0.3))
-      print(t)
-  },
-  video.name = video_name,
-  ffmpeg = ani.options("ffmpeg"),
-  other.opts = if (grepl("[.]mp4$", video_name)) "-pix_fmt yuv420p",
-  interval = 0.0111,
-  ani.width=960,
-  ani.height=1080
-)
-
-distances_motion = GetH5DistancesPlusMotion(date, session, rec_nr, l_r)
-tracks = GetTracks(date, session, rec_nr, l_r)
-tracks_stabilized = GetTracksStabilized(date, session, rec_nr, l_r)
-plot(x=seq(1,t), as.factor(distances_motion$motion_type[1:t]), type='l')#, xlim=c(1,nrow(distances_motion)))
-table(distances_motion$motion_type)
-
-# Speed
-plot(x=seq(1,t), y=distances_motion$dist_thorax[1:t], type='l')
-hist(distances_motion$dist_thorax, breaks=seq(0,40,0.1), xlim=c(0,5))
 
 
 
