@@ -59,7 +59,7 @@ for(file in files){
       tracks_csv[,i+1] = tracks_csv[,6]
     }
   }
-  write.csv(tracks_csv, file=sprintf('%s/video_%s.csv', path_tracks_csv, file_id), sep=',',row.names=F,quote=F)
+  write.csv(tracks_csv, file=sprintf('%s/%s.csv', path_tracks_csv, file_id), sep=',',row.names=F,quote=F)
 }
 
 file_id = 'l_2022-10-12_1_1'

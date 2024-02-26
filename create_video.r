@@ -5,6 +5,10 @@
 CreateVideo = function(date, session, rec_nr, l_r) {
 
   tracks = GetTracks(date, session, rec_nr, l_r)
+  #date = "2022-10-11"
+  #session = '1'
+  #rec_nr = '1'
+  #l_r = 'l'
   tracks_stabilized = GetTracksStabilized(date, session, rec_nr, l_r)
   tracks_stabilized_smoothed = GetTracksSmoothed(tracks_stabilized)
   dist_motion = GetH5DistancesPlusMotion(date, session, rec_nr, l_r)
@@ -18,7 +22,7 @@ CreateVideo = function(date, session, rec_nr, l_r) {
   video_name = sprintf('%s/%s_%s_%s_%s_combined2.mp4', path_output, l_r, date, session, rec_nr)
   theme_set(theme_classic(base_size=20))
   saveVideo(
-    for (t in c(1:8000)){
+    for (t in c(1:max_time_frames)){
       p1 = PlotFly(tracks, t, 1)
       if(l_r == 'l')
         p1 = p1 + lims(x=c(1,1000), y=c(1,1000))
