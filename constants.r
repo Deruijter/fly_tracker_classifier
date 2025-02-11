@@ -1,7 +1,7 @@
 # Consider any velocity under this value as zero (based on histogram visualization).
 # Reason for this is that the camera will always record some kind of speed due to vibrations/conversion of the videos and stuff like that
-non_zero = 0.4 # Unit: pixels per time frame
-non_zero_limbs = 1.2 # Unit: pixels per time frame
+non_zero = 0.4 # Unit: pixels per time frame, this is for the thorax, which is relatively stable
+non_zero_limbs = 1.2 # Unit: pixels per time frame, for the limbs, which have more jitter
 
 # Indexes of the different body parts of the flies
 id_head = 1
@@ -22,7 +22,7 @@ id_x = 1
 id_y = 2
 
 # Paths
-path_data = './data/'
-path_sleap = './data/sleap_exports'
+path_data = './data'
+path_sleap = './data/sleap_exports_h5'
 path_sleap_csv = './data/sleap_exports_csv'
 path_output = './output'

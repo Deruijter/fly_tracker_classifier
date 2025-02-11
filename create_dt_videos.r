@@ -19,7 +19,7 @@ GetDtVideos = function() {
 
 CreateDtVideos = function() {
   # Details of each experiment
-  exp_details = read.csv('./data/tests/data.csv', header=T, sep='\t')
+  exp_details = read.csv(sprintf('%s/%s',path_data, 'tests/data.csv'), header=T, sep='\t')
   
   # Initialize a data set for all the data related to specific videos
   dt_videos = data.frame('fid'=character(),
@@ -92,7 +92,7 @@ CreateDtVideos = function() {
     dt_videos[dt_videos$fid==fid,'rec_nr_cor'] = dt_videos[dt_videos$fid==fid,'rec_nr'] - (min_rec_nr-1)
   }
   
-  write.table(dt_videos, './data/dt_videos.csv', quote=F, sep="\t", row.names=F)
+  write.table(dt_videos, sprintf('%s/%s',path_data, 'dt_videos.csv'), quote=F, sep="\t", row.names=F)
   
   return(dt_videos)
 }
