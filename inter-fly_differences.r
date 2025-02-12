@@ -36,8 +36,8 @@ inter_diff_dist_total = rrmse(fly_means$distance_total, mean(dt[,'distance_total
 
 
 
-hist(intra_diff$vel_non_zero_mean, xlim=c(0,100), breaks=10)
-t.test(intra_diff$vel_non_zero_mean, mu=inter_diff_vel_mean)
+hist(intra_diff$velocity_non_zero_mean, xlim=c(0,100), breaks=10)
+t.test(intra_diff$velocity_non_zero_mean, mu=inter_diff_vel_mean)
 
 hist(intra_diff$vel_non_zero_sd, xlim=c(0,100), breaks=10)
 t.test(intra_diff$vel_non_zero_sd, mu=inter_diff_vel_sd)
@@ -48,7 +48,7 @@ t.test(intra_diff$dur_velocity_non_zero, mu=inter_diff_vel_dur)
 hist(intra_diff$distance_total, xlim=c(0,100), breaks=10)
 t.test(intra_diff$distance_total, mu=inter_diff_dist_total)
 
-ggplot(intra_diff, aes(x=vel_non_zero_mean)) +
+ggplot(intra_diff, aes(x=velocity_non_zero_mean)) +
   geom_histogram() +
   xlim(c(0,100)) + 
   geom_vline(aes(xintercept=inter_diff_vel_mean)) +
@@ -64,11 +64,10 @@ ggplot(dt[dt$fid%in%fids[c(4,6,35)],], aes(x=velocity_non_zero_mean, fill=fid)) 
 library(factoextra)
 library(cluster)
 
-# simple_factors = c('velocity_non_zero_mean',
-#                    'velocity_non_zero_sd',
-#                    'duration_grooming',
-#                    'duration_moving',
-#                    'distance_total')
+simple_factors = c('velocity_non_zero_mean',
+                   'velocity_non_zero_sd',
+                   'duration_grooming',
+                   'duration_moving')
 # dt_tmp = dt[complete.cases(dt),]
 # dt_clust = dt_tmp[,c(simple_factors)]
 # rownames(dt_clust) = sprintf('%s_%s', dt_tmp$fid, dt_tmp$rec_nr)
@@ -118,7 +117,8 @@ library(dendextend)
 
 ### Heatmap + dendrogram
 library(colorBlindness)
-dt_clust = fly_means[,c(4,5,6,2,3)]
+library(paletteer)
+dt_clust = fly_means[,c(5,6,2,3)]
 rownames(dt_clust) = fly_means$fid
 dt_clust = scale(dt_clust)
 method='complete'
@@ -150,6 +150,16 @@ corr_plot_vars
 # reticulate::use_miniconda('r-reticulate')
 # reticulate::py_run_string("import sys")
 save_image(corr_plot_vars, file=sprintf('%s/%s',path_output,'corr_plot_vars.svg'),width=700 ,height = 3000)#
+
+
+
+### Correlate the measurement variables
+library(corrplot)
+c = cor(fly_means[,c(4,5,6,2,3,7)])
+corrplot(c, method='pie')
+
+
+
 
 
 
@@ -409,20 +419,25 @@ dev.off()
 
 
 ################### PCA ########################################################
+library(ggbiplot)
 #dt_frms = dt[,seq(11,ncol(dt),3)]
-tmp = dt[dt$sex_m==1,]
+tmp = dt[complete.cases(dt),]
+tmp$sex_m = as.character(tmp$sex_m)
+tmp$rec_nr_cor = as.character(tmp$rec_nr_cor)
+#tmp = dt[dt$sex_m==1,]
 dt_frms = tmp[,simple_factors]
-dt_frms = dt_frms[,colSums(dt_frms)>0]
+#dt_frms = dt_frms[complete.cases(dt_frms),]
 pc = prcomp(dt_frms, center=T, scale.=T)
 print(pc)
 
 plot(pc, type = "l")
 
-p = ggbiplot(pc, groups=tmp[,'fid'], choices = c(1,2), obs.scale = 1, var.scale = 1, ellipse = T, var.axes = T, circle = F) + 
+p = ggbiplot(pc, groups=tmp[,'exp_type'], choices = c(1,2), obs.scale = 1, var.scale = 1, ellipse = T, var.axes = T, circle = F) + 
   scale_color_discrete(name = '') + 
   theme(legend.direction = 'horizontal', 
         legend.position = 'top') + 
   theme_minimal()
+print(p)
 
 pdf(file=sprintf('%s/tmp/pca_flies.pdf',path_output), width = 8, height=5.5)
 print(p)
